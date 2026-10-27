@@ -379,6 +379,90 @@ msgstr "Reiniciar o WindowMaker"
 msgid "Start alternate window manager"
 msgstr "Iniciar gerenciador de janelas alternativo"
 
+#: ../src/dialog.c
+msgid "Window Manager for X"
+msgstr "Gerenciador de janelas para o X"
+
+#: ../src/dialog.c
+#, c-format
+msgid "Version %s"
+msgstr "Versão %s"
+
+#: ../src/dialog.c
+#, c-format
+msgid "Running on: %s (%s)\n"
+msgstr "Executando em: %s (%s)\n"
+
+#: ../src/dialog.c
+#, c-format
+msgid "Using visual 0x%x: %s %ibpp "
+msgstr "Usando o visual 0x%x: %s %ibpp "
+
+#: ../src/dialog.c
+msgid "(32 thousand colors)\n"
+msgstr "(32 mil cores)\n"
+
+#: ../src/dialog.c
+msgid "(64 thousand colors)\n"
+msgstr "(64 mil cores)\n"
+
+#: ../src/dialog.c
+msgid "(16 million colors)\n"
+msgstr "(16 milhões de cores)\n"
+
+#: ../src/dialog.c
+msgid "(1 billion colors)\n"
+msgstr "(1 bilhão de cores)\n"
+
+#: ../src/dialog.c
+#, c-format
+msgid "(%d colors)\n"
+msgstr "(%d cores)\n"
+
+#: ../src/dialog.c
+#, c-format
+msgid "Total memory allocated: %lu kB (in use: %lu kB, %lu free chunks)\n"
+msgstr "Memória total alocada: %lu kB (em uso: %lu kB, %lu blocos livres)\n"
+
+#: ../src/dialog.c
+#, c-format
+msgid "Total memory allocated: %lu kB (in use: %lu kB)\n"
+msgstr "Memória total alocada: %lu kB (em uso: %lu kB)\n"
+
+#: ../src/dialog.c
+msgid "Image formats: "
+msgstr "Formatos de imagem: "
+
+#: ../src/dialog.c
+msgid ""
+"\n"
+"Additional support for: "
+msgstr ""
+"\n"
+"Suporte adicional a: "
+
+#: ../src/dialog.c
+#, c-format
+msgid "%d head(s) found"
+msgstr "%d monitores encontrados"
+
+#: ../src/dialog.c
+#, c-format
+msgid "%d head found"
+msgstr "%d monitor encontrado"
+
+#: ../src/dialog.c
+msgid "supported"
+msgstr "suportado"
+
+#: ../src/dialog.c
+msgid "unsupported"
+msgstr "não suportado"
+
+#: ../src/dialog.c
+msgid "Info"
+msgstr "Informações"
+
 #: ../src/dock.c:213
 #, c-format
 msgid "Type the name for workspace %i:"
