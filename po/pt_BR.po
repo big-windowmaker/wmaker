@@ -44,9 +44,9 @@ msgid ""
 "Any unsaved changes will be lost.\n"
 "Please confirm."
 msgstr ""
-"A aplicação obrigatoriamente será fechada (kill).\n"
+" será fechado à força.\n"
 "Qualquer mudança não salva será perdida.\n"
-"Confirme por favor."
+"Confirme, por favor."
 
 #: ../src/appicon.c:585 ../src/dock.c:282 ../src/winmenu.c:125
 msgid "Kill Application"
