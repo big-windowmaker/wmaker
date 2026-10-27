@@ -1667,6 +1667,10 @@ msgstr "Destruir último"
 msgid "invalid data in selection"
 msgstr "dados inválidos na seleção"
 
+#: ../src/dialog.c
+msgid "Based on Window Maker"
+msgstr "Baseado no Window Maker"
+
 #~ msgid "out of memory while updating GNOME hints"
 #~ msgstr "faltou memória enquanto estava atualizando as dicas do GNOME"
 

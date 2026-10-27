@@ -43,6 +43,7 @@
 #endif
 
 #include <signal.h>
+#include <fontconfig/fontconfig.h>
 #ifdef __FreeBSD__
 #include <sys/signal.h>
 #endif
@@ -1151,6 +1152,7 @@ typedef struct {
 	WMLabel *name2L;
 	WMLabel *versionL;
 	WMLabel *infoL;
+	WMLabel *copyleftL;
 	WMLabel *copyrL;
 } InfoPanel;
 
@@ -1158,6 +1160,72 @@ typedef struct {
     "Copyright \xc2\xa9 1997-2006 Alfredo K. Kojima\n"\
     "Copyright \xc2\xa9 1998-2006 Dan Pascu\n"\
     "Copyright \xc2\xa9 2013-%hu Window Maker Developers Team"
+
+/*
+ * Big WindowMaker: crédito da edição. O aviso de copyright do Window Maker
+ * (COPYRIGHT_TEXT) continua no painel, logo abaixo, como pede a GPL (seção
+ * 2c) para programas interativos.
+ */
+#define BIG_WM_NAME           "Big WindowMaker"
+#define BIG_WM_COPYLEFT_YEAR  2026
+#define BIG_WM_COPYLEFT_OWNER "Rafael Ruscher"
+
+/*
+ * Símbolo de copyleft (o "c" virado). U+1F12F só existe em poucas fontes
+ * (Noto Sans Symbols, Source Han Sans, Symbola...); sem nenhuma delas o
+ * Pango desenharia um quadrado com o código do caractere. Nesse caso usa
+ * "(\xc9\x94)" (U+0254 entre parênteses), que DejaVu Sans e Noto Sans têm.
+ */
+static const char *copyleftSymbol(void)
+{
+	FcPattern *pattern;
+	FcCharSet *charset;
+	FcObjectSet *objects;
+	FcFontSet *fonts;
+	int found = 0;
+
+	if (!FcInit())
+		return "(\xc9\x94)";
+
+	pattern = FcPatternCreate();
+	charset = FcCharSetCreate();
+	objects = FcObjectSetBuild(FC_FAMILY, NULL);
+	if (pattern && charset && objects && FcCharSetAddChar(charset, 0x1F12F)
+	    && FcPatternAddCharSet(pattern, FC_CHARSET, charset)) {
+		fonts = FcFontList(NULL, pattern, objects);
+		if (fonts) {
+			found = fonts->nfont > 0;
+			FcFontSetDestroy(fonts);
+		}
+	}
+	if (objects)
+		FcObjectSetDestroy(objects);
+	if (charset)
+		FcCharSetDestroy(charset);
+	if (pattern)
+		FcPatternDestroy(pattern);
+
+	return found ? "\xf0\x9f\x84\xaf" : "(\xc9\x94)";
+}
+
+/* Largura, em pixels, da linha mais longa de um texto com várias linhas. */
+static int widestLineWidth(WMFont *font, const char *text)
+{
+	int widest = 0;
+
+	while (*text) {
+		size_t len = strcspn(text, "\n");
+		int w = WMWidthOfString(font, text, len);
+
+		if (w > widest)
+			widest = w;
+		text += len;
+		if (*text == '\n')
+			text++;
+	}
+
+	return widest;
+}
 
 static InfoPanel *infoPanel = NULL;
 
@@ -1278,9 +1346,14 @@ void wShowInfoPanel(WScreen *scr)
 #if defined(HAVE_MALLOC_H) && defined(HAVE_MALLINFO2) && defined(DEBUG)
 	pwidth = WMScaleX(432);
 #else
-	pwidth = WMScaleX(392);
+	/*
+	 * Big WindowMaker: 392x270 no upstream. Mais largo para "Big WindowMaker",
+	 * o subtítulo e as linhas de informação (traduzidas) caberem sem corte;
+	 * mais alto para a linha de copyleft acima dos copyrights.
+	 */
+	pwidth = WMScaleX(432);
 #endif
-	pheight = WMScaleY(270);
+	pheight = WMScaleY(296);
 	WMResizeWidget(panel->win, pwidth, pheight);
 
 	logo = WMCreateApplicationIconBlendedPixmap(scr->wmscreen, (RColor *) NULL);
@@ -1298,7 +1371,7 @@ void wShowInfoPanel(WScreen *scr)
 
 	sepHeight = WMScaleY(3);
 	panel->name1L = WMCreateLabel(panel->win);
-	WMResizeWidget(panel->name1L, WMScaleX(240), WMScaleY(30) + WMScaleY(2));
+	WMResizeWidget(panel->name1L, WMScaleX(280), WMScaleY(30) + WMScaleY(2));
 	WMMoveWidget(panel->name1L, WMScaleX(100), WMScaleY(30) - WMScaleY(2) - sepHeight);
 
 	snprintf(buffer,
@@ -1306,7 +1379,7 @@ void wShowInfoPanel(WScreen *scr)
 		"Lucida Sans,Comic Sans MS,URW Gothic L,Trebuchet MS:italic:pixelsize=%d:antialias=true",
 		WMScaleY(24));
 	font = WMCreateFont(scr->wmscreen, buffer);
-	strbuf = "Window Maker";
+	strbuf = BIG_WM_NAME;
 	if (font) {
 		width = WMWidthOfString(font, strbuf, strlen(strbuf));
 		WMSetLabelFont(panel->name1L, font);
@@ -1317,12 +1390,12 @@ void wShowInfoPanel(WScreen *scr)
 
 	panel->lineF = WMCreateFrame(panel->win);
 	WMResizeWidget(panel->lineF, width, sepHeight);
-	WMMoveWidget(panel->lineF, WMScaleX(100) + (WMScaleX(240) - width) / 2, WMScaleY(60) - sepHeight);
+	WMMoveWidget(panel->lineF, WMScaleX(100) + (WMScaleX(280) - width) / 2, WMScaleY(60) - sepHeight);
 	WMSetFrameRelief(panel->lineF, WRSimple);
 	WMSetWidgetBackgroundColor(panel->lineF, scr->black);
 
 	panel->name2L = WMCreateLabel(panel->win);
-	WMResizeWidget(panel->name2L, WMScaleX(240), WMScaleY(24));
+	WMResizeWidget(panel->name2L, WMScaleX(280), WMScaleY(24));
 	WMMoveWidget(panel->name2L, WMScaleX(100), WMScaleY(60));
 	snprintf(buffer, sizeof(buffer), "URW Gothic L,Nimbus Sans L:pixelsize=%d:antialias=true", WMScaleY(16));
 	font = WMCreateFont(scr->wmscreen, buffer);
@@ -1332,19 +1405,38 @@ void wShowInfoPanel(WScreen *scr)
 		font = NULL;
 	}
 	WMSetLabelTextAlignment(panel->name2L, WACenter);
-	WMSetLabelText(panel->name2L, _("Window Manager for X"));
+	WMSetLabelText(panel->name2L, _("Based on Window Maker"));
 
 	snprintf(buffer, sizeof(buffer), _("Version %s"), VERSION);
 	panel->versionL = WMCreateLabel(panel->win);
-	WMResizeWidget(panel->versionL, WMScaleX(310), WMScaleY(16));
+	WMResizeWidget(panel->versionL, WMScaleX(350), WMScaleY(16));
 	WMMoveWidget(panel->versionL, WMScaleX(30), WMScaleY(95));
 	WMSetLabelTextAlignment(panel->versionL, WARight);
 	WMSetLabelText(panel->versionL, buffer);
 	WMSetLabelWraps(panel->versionL, False);
 
+	panel->copyleftL = WMCreateLabel(panel->win);
+	WMResizeWidget(panel->copyleftL, WMScaleX(402), WMScaleY(16));
+	WMMoveWidget(panel->copyleftL, WMScaleX(15), WMScaleY(224));
+	WMSetLabelTextAlignment(panel->copyleftL, WALeft);
+	WMSetLabelWraps(panel->copyleftL, False);
+	if (current_year > BIG_WM_COPYLEFT_YEAR)
+		snprintf(buffer, sizeof(buffer), "Copyleft %s %d-%d " BIG_WM_COPYLEFT_OWNER,
+			 copyleftSymbol(), BIG_WM_COPYLEFT_YEAR, current_year);
+	else
+		snprintf(buffer, sizeof(buffer), "Copyleft %s %d " BIG_WM_COPYLEFT_OWNER,
+			 copyleftSymbol(), BIG_WM_COPYLEFT_YEAR);
+	WMSetLabelText(panel->copyleftL, buffer);
+	font = WMBoldSystemFontOfSize(scr->wmscreen, WMScaleY(11));
+	if (font) {
+		WMSetLabelFont(panel->copyleftL, font);
+		WMReleaseFont(font);
+		font = NULL;
+	}
+
 	panel->copyrL = WMCreateLabel(panel->win);
-	WMResizeWidget(panel->copyrL, WMScaleX(360), WMScaleY(60));
-	WMMoveWidget(panel->copyrL, WMScaleX(15), WMScaleY(215));
+	WMResizeWidget(panel->copyrL, WMScaleX(402), WMScaleY(50));
+	WMMoveWidget(panel->copyrL, WMScaleX(15), WMScaleY(240));
 	WMSetLabelTextAlignment(panel->copyrL, WALeft);
 
 	snprintf(buffer, sizeof(buffer), COPYRIGHT_TEXT, current_year);
@@ -1473,12 +1565,24 @@ void wShowInfoPanel(WScreen *scr)
 #if defined(HAVE_MALLOC_H) && defined(HAVE_MALLINFO2) && defined(DEBUG)
 	WMResizeWidget(panel->infoL, WMScaleX(430), WMScaleY(105));
 #else
-	WMResizeWidget(panel->infoL, WMScaleX(370), WMScaleY(105));
+	WMResizeWidget(panel->infoL, WMScaleX(402), WMScaleY(105));
 #endif
 	WMMoveWidget(panel->infoL, WMScaleX(15), WMScaleY(115));
 	WMSetLabelText(panel->infoL, strbuf);
 	font = WMSystemFontOfSize(scr->wmscreen, WMScaleY(11));
 	if (font) {
+		/*
+		 * Big WindowMaker: a lista de formatos de imagem e as traduções
+		 * podem passar da largura do painel (o WMLabel corta, não quebra a
+		 * linha). Alarga o painel o quanto for preciso; 8 = margens do label.
+		 */
+		int needed = widestLineWidth(font, strbuf) + 8;
+
+		if (needed > (int) WMWidgetWidth(panel->infoL)) {
+			WMResizeWidget(panel->infoL, needed, WMScaleY(105));
+			pwidth = needed + 2 * WMScaleX(15);
+			WMResizeWidget(panel->win, pwidth, pheight);
+		}
 		WMSetLabelFont(panel->infoL, font);
 		WMReleaseFont(font);
 		font = NULL;
