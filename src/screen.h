@@ -245,6 +245,9 @@ typedef struct _WScreen {
 
     struct WDock *dock;		       /* the application dock */
     struct WMenu *dock_pos_menu;       /* Dock position menu */
+    struct WMenu *dock_monitor_menu;   /* Dock monitor menu (rebuilt when opened) */
+    char *dock_monitor;                /* Dock monitor: NULL (whole screen), "primary",
+                                        * a RandR connector name or a head number */
     struct WPixmap *dock_dots;	       /* 3 dots for the Dock */
     Window dock_shadow;		       /* shadow for dock buttons */
     struct WAppIcon *clip_icon;        /* The clip main icon, or the dock's, if they are merged */

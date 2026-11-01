@@ -538,12 +538,12 @@ static void wRandR_Update(WScreen *scr)
     i = scr->xine_info.primary_head;
     wRandR_ApplyToXinerama(scr, state);
 
-    /* Move the dock if needed */
-    if (scr->dock &&
-        ((scr->xine_info.primary_head != i && wPreferences.keep_dock_on_primary_head) ||
-         scr->dock->x_pos < 0 ||
-         scr->dock->x_pos >= scr->scr_width))
-        wDockSwap(scr->dock);
+    /* Put the dock back on its monitor: the one the user chose when it is
+     * connected (also after it comes back), else the primary one. The
+     * choice itself is kept (scr->dock_monitor). */
+    (void) i;
+    if (scr->dock)
+        wDockUpdateHead(scr);
 
     /* Snap each workspace clip back onto a visible head if it ended up
      * outside the (now smaller or rearranged) virtual framebuffer */
@@ -578,6 +578,54 @@ static void wRandRDebounceTimerFired(void *data)
 }
 
 /* end of local stuff */
+
+static Bool wRandR_OutputActive(const WRandROutput *o)
+{
+    return o->crtc != None && o->w > 0 && o->h > 0;
+}
+
+int wRandRHeadForOutputName(WScreen *scr, const char *name)
+{
+    WRandRState *state = scr->randr_state;
+    int i, h;
+
+    if (!state || !name || !*name)
+        return -1;
+
+    for (i = 0; i < state->n_outputs; i++) {
+        const WRandROutput *o = &state->outputs[i];
+
+        if (!wRandR_OutputActive(o) || strcmp(o->name, name) != 0)
+            continue;
+        /* heads are deduplicated by origin (mirrors share one head) */
+        for (h = 0; h < wXineramaHeads(scr); h++) {
+            WMRect r = wGetRectForHead(scr, h);
+
+            if (r.pos.x == o->x && r.pos.y == o->y)
+                return h;
+        }
+    }
+    return -1;
+}
+
+const char *wRandROutputNameForHead(WScreen *scr, int head)
+{
+    WRandRState *state = scr->randr_state;
+    WMRect r;
+    int i;
+
+    if (!state || head < 0 || head >= wXineramaHeads(scr))
+        return NULL;
+
+    r = wGetRectForHead(scr, head);
+    for (i = 0; i < state->n_outputs; i++) {
+        const WRandROutput *o = &state->outputs[i];
+
+        if (wRandR_OutputActive(o) && o->x == r.pos.x && o->y == r.pos.y)
+            return o->name;
+    }
+    return NULL;
+}
 
 void wRandRInit(WScreen *scr)
 {

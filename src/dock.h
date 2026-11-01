@@ -91,6 +91,9 @@ WAppIcon *wDockFindIconForWindow(WDock *dock, Window window);
 void wDockDoAutoLaunch(WDock *dock, int workspace);
 void wDockLaunchWithState(WAppIcon *btn, WSavedState *state);
 void wDockSwap(WDock *dock);
+/* Moves the Dock (and its drawers) to the monitor chosen for it, or the
+ * primary monitor when that one is not connected, inside its bounds. */
+void wDockUpdateHead(WScreen *scr);
 void wClipSnapToHead(WDock *clip);
 
 #ifdef USE_DOCK_XDND

@@ -32,6 +32,7 @@
 #include <unistd.h>
 #include <math.h>
 #include <limits.h>
+#include <ctype.h>
 
 #ifndef PATH_MAX
 #define PATH_MAX DEFAULT_PATH_MAX
@@ -45,6 +46,9 @@
 #include "actions.h"
 #include "stacking.h"
 #include "dock.h"
+#ifdef USE_RANDR
+#include "randr.h"
+#endif
 #include "dockedapp.h"
 #include "dialog.h"
 #include "main.h"
@@ -81,6 +85,7 @@ static WMPropList *dHost, *dDock, *dClip;
 static WMPropList *dAutoAttractIcons;
 
 static WMPropList *dPosition, *dApplications, *dLowered, *dCollapsed;
+static WMPropList *dMonitor;
 
 static WMPropList *dAutoCollapse, *dAutoRaiseLower, *dOmnipresent;
 
@@ -127,6 +132,8 @@ static int indexOfHole(WDock *drawer, WAppIcon *moving_aicon, int redocking);
 static void drawerConsolidateIcons(WDock *drawer);
 
 static int onScreen(WScreen *scr, int x, int y);
+static void updateDockMonitorMenu(WScreen *scr);
+static void moveDock(WDock *dock, int new_x, int new_y);
 
 static void make_keys(void)
 {
@@ -148,6 +155,7 @@ static void make_keys(void)
 	dHost = WMRetainPropList(WMCreatePLString("Host"));
 
 	dPosition = WMCreatePLString("Position");
+	dMonitor = WMCreatePLString("Monitor");
 	dApplications = WMCreatePLString("Applications");
 	dLowered = WMCreatePLString("Lowered");
 	dCollapsed = WMCreatePLString("Collapsed");
@@ -814,25 +822,89 @@ static void unhideHereCallback(WMenu *menu, WMenuEntry *entry)
 	wUnhideApplication(wapp, False, True);
 }
 
+/*
+ * Head chosen for the Dock: scr->dock_monitor names it ("primary", a RandR
+ * connector such as "HDMI-A-0", which stays the same when monitors are
+ * reordered, or a head number). A monitor that is not connected falls back
+ * to the primary one, without forgetting the choice: the Dock goes back
+ * when it is plugged in again. -1 is the classic behaviour, the edges of
+ * the whole screen (or the primary head with KeepDockOnPrimaryHead).
+ */
+static int dockPreferredHead(WScreen *scr)
+{
+	const char *m = scr->dock_monitor;
+	int heads = wXineramaHeads(scr);
+
+	if (m && *m) {
+		if (strcmp(m, "primary") == 0)
+			return scr->xine_info.primary_head;
+		if (isdigit((unsigned char) m[0])) {
+			int n = atoi(m);
+
+			return (n >= 0 && n < heads) ? n : scr->xine_info.primary_head;
+		}
+#ifdef USE_RANDR
+		{
+			int h = wRandRHeadForOutputName(scr, m);
+
+			if (h >= 0)
+				return h;
+		}
+#endif
+		return scr->xine_info.primary_head;
+	}
+	if (wPreferences.keep_dock_on_primary_head)
+		return scr->xine_info.primary_head;
+	return -1;
+}
+
+static WMRect dockAreaRect(WScreen *scr)
+{
+	int head = dockPreferredHead(scr);
+
+	if (head < 0)
+		return wmkrect(0, 0, scr->scr_width, scr->scr_height);
+	return wGetRectForHead(scr, head);
+}
+
+/* Name kept for a head: its connector when RandR knows it, else its number. */
+static char *dockNameForHead(WScreen *scr, int head)
+{
+	char buf[16];
+
+#ifdef USE_RANDR
+	const char *name = wRandROutputNameForHead(scr, head);
+
+	if (name && *name)
+		return wstrdup(name);
+#else
+	(void) scr;
+#endif
+	snprintf(buf, sizeof(buf), "%d", head);
+	return wstrdup(buf);
+}
+
+/* Keeps the whole first icon of the Dock on its head vertically. */
+static int dockClampY(WScreen *scr, int y)
+{
+	WMRect r = dockAreaRect(scr);
+
+	if (y > r.pos.y + (int) r.size.height - ICON_SIZE)
+		y = r.pos.y + (int) r.size.height - ICON_SIZE;
+	if (y < r.pos.y)
+		y = r.pos.y;
+	return y;
+}
+
 static int getDockXPosition(WScreen *scr, Bool on_right_side)
 {
-	int x;
+	WMRect rect = dockAreaRect(scr);
+	int x = rect.pos.x;
 
-	if (wPreferences.keep_dock_on_primary_head) {
-		WMRect rect;
-
-		rect = wGetRectForHead(scr, scr->xine_info.primary_head);
-		x = rect.pos.x;
-		if (on_right_side)
-			x += rect.size.width - ICON_SIZE - DOCK_EXTRA_SPACE;
-		else
-			x += DOCK_EXTRA_SPACE;
-	} else {
-		if (on_right_side)
-			x = scr->scr_width - ICON_SIZE - DOCK_EXTRA_SPACE;
-		else
-			x = DOCK_EXTRA_SPACE;
-	}
+	if (on_right_side)
+		x += rect.size.width - ICON_SIZE - DOCK_EXTRA_SPACE;
+	else
+		x += DOCK_EXTRA_SPACE;
 
 	return x;
 }
@@ -1192,6 +1264,88 @@ static void updateDockPositionMenu(WMenu *menu, WDock *dock)
 	entry->clientdata = dock;
 }
 
+static void setDockMonitorCallback(WMenu *menu, WMenuEntry *entry)
+{
+	WScreen *scr = menu->frame->screen_ptr;
+	const char *name = entry->clientdata;
+
+	if (entry->flags.indicator_on)
+		return;
+	if (scr->dock_monitor)
+		wfree(scr->dock_monitor);
+	scr->dock_monitor = (name && *name) ? wstrdup(name) : NULL;
+
+	wDockUpdateHead(scr);
+	wScreenUpdateUsableArea(scr);
+	wArrangeIcons(scr, True);
+	/* the choice survives a crash or a forced logout */
+	wScreenSaveState(scr);
+}
+
+static void addDockMonitorEntry(WMenu *menu, const char *text, const char *value, Bool on)
+{
+	WMenuEntry *entry = wMenuAddCallback(menu, text, setDockMonitorCallback, wstrdup(value ? value : ""));
+
+	entry->free_cdata = wfree;
+	entry->flags.indicator = 1;
+	entry->flags.indicator_type = MI_DIAMOND;
+	entry->flags.indicator_on = on;
+}
+
+/*
+ * Monitors connected now, rebuilt every time the Dock menu opens: hotplug
+ * changes the list. A chosen monitor that is not connected is listed too
+ * (the Dock is on the primary one meanwhile and goes back when it returns).
+ */
+static void updateDockMonitorMenu(WScreen *scr)
+{
+	WMenu *menu = scr->dock_monitor_menu;
+	const char *pref = scr->dock_monitor;
+	Bool found = False;
+	char text[160];
+	int heads = wXineramaHeads(scr);
+	int i;
+
+	if (!menu)
+		return;
+	while (menu->entry_no > 0)
+		wMenuRemoveItem(menu, 0);
+
+	addDockMonitorEntry(menu, _("Primary monitor"), "primary",
+			    (pref && strcmp(pref, "primary") == 0) ||
+			    (!pref && wPreferences.keep_dock_on_primary_head));
+	if (pref && strcmp(pref, "primary") == 0)
+		found = True;
+
+	for (i = 0; i < heads; i++) {
+		WMRect r = wGetRectForHead(scr, i);
+		char *name = dockNameForHead(scr, i);
+		Bool on = pref && strcmp(pref, name) == 0;
+
+		if (isdigit((unsigned char) name[0]))
+			snprintf(text, sizeof(text), _("Monitor %d (%ux%u)"), i + 1, r.size.width, r.size.height);
+		else
+			snprintf(text, sizeof(text), _("Monitor %d: %s (%ux%u)"), i + 1, name, r.size.width, r.size.height);
+		if (i == scr->xine_info.primary_head)
+			strncat(text, " *", sizeof(text) - strlen(text) - 1);
+		addDockMonitorEntry(menu, text, name, on);
+		found |= on;
+		wfree(name);
+	}
+
+	if (pref && !found) {
+		snprintf(text, sizeof(text), _("%s (disconnected)"), pref);
+		addDockMonitorEntry(menu, text, pref, True);
+	}
+
+	if (heads > 1)
+		addDockMonitorEntry(menu, _("Edge of the whole screen"), "",
+				    !pref && !wPreferences.keep_dock_on_primary_head);
+
+	menu->flags.realized = 0;
+	wMenuRealize(menu);
+}
+
 static WMenu *makeDockPositionMenu(WScreen *scr)
 {
 	/* When calling this, the dock is being created, so scr->dock is still not set
@@ -1242,6 +1396,15 @@ static WMenu *dockMenuCreate(WScreen *scr, int type)
 		if (scr->dock_pos_menu == NULL)
 			scr->dock_pos_menu = makeDockPositionMenu(scr);
 		wMenuEntrySetCascade(menu, entry, scr->dock_pos_menu);
+
+		entry = wMenuAddCallback(menu, _("Monitor"), NULL, NULL);
+		if (scr->dock_monitor_menu == NULL) {
+			scr->dock_monitor_menu = wMenuCreate(scr, NULL, False);
+			/* placeholder: the list is rebuilt each time the menu opens */
+			wMenuAddCallback(scr->dock_monitor_menu, _("Primary monitor"), NULL, NULL);
+			wMenuRealize(scr->dock_monitor_menu);
+		}
+		wMenuEntrySetCascade(menu, entry, scr->dock_monitor_menu);
 
 		if (!wPreferences.flags.nodrawer)
 			wMenuAddCallback(menu, _("Add a drawer"), addADrawerCallback, NULL);
@@ -1572,6 +1735,12 @@ static WMPropList *dockSaveState(WDock *dock)
 		value = WMCreatePLString(buffer);
 		WMPutInPLDictionary(dock_state, dPosition, value);
 		WMReleasePropList(value);
+
+		if (dock->screen_ptr->dock_monitor) {
+			value = WMCreatePLString(dock->screen_ptr->dock_monitor);
+			WMPutInPLDictionary(dock_state, dMonitor, value);
+			WMReleasePropList(value);
+		}
 	}
 	WMReleasePropList(list);
 
@@ -1823,6 +1992,16 @@ WDock *wDockRestoreState(WScreen *scr, WMPropList *dock_state, int type)
 
 	WMRetainPropList(dock_state);
 
+	/* restore the monitor of the Dock (before its position, which depends on it) */
+	if (type == WM_DOCK) {
+		value = WMGetFromPLDictionary(dock_state, dMonitor);
+		if (value && WMIsPLString(value)) {
+			if (scr->dock_monitor)
+				wfree(scr->dock_monitor);
+			scr->dock_monitor = *WMGetFromPLString(value) ? wstrdup(WMGetFromPLString(value)) : NULL;
+		}
+	}
+
 	/* restore position */
 	value = WMGetFromPLDictionary(dock_state, dPosition);
 	if (value) {
@@ -1852,6 +2031,18 @@ WDock *wDockRestoreState(WScreen *scr, WMPropList *dock_state, int type)
 				right = getDockXPosition(scr, True);
 				midpoint = (left + right) / 2;
 
+				/* the side is decided on the head of the Dock */
+				if (dockPreferredHead(scr) >= 0) {
+					WMRect r = dockAreaRect(scr);
+
+					/* saved outside that head (another monitor, or the
+					 * classic right edge of the whole screen): the side
+					 * the saved position was on, relative to the head */
+					if (dock->x_pos >= r.pos.x + (int) r.size.width)
+						midpoint = INT_MIN;
+					else if (dock->x_pos < r.pos.x)
+						midpoint = INT_MAX;
+				}
 				if (dock->x_pos < midpoint) {
 					dock->x_pos = left;
 					dock->on_right_side = 0;
@@ -1859,6 +2050,7 @@ WDock *wDockRestoreState(WScreen *scr, WMPropList *dock_state, int type)
 					dock->x_pos = right;
 					dock->on_right_side = 1;
 				}
+				dock->y_pos = dockClampY(scr, dock->y_pos);
 			}
 		}
 	}
@@ -3053,6 +3245,24 @@ void wDockSwap(WDock *dock)
 	wScreenUpdateUsableArea(scr);
 }
 
+void wDockUpdateHead(WScreen *scr)
+{
+	WDock *dock = scr->dock;
+	int x, y;
+
+	if (!dock)
+		return;
+
+	x = getDockXPosition(scr, dock->on_right_side);
+	y = dockClampY(scr, dock->y_pos);
+	if (x == dock->x_pos && y == dock->y_pos)
+		return;
+	if (x != dock->x_pos)
+		wDockSwap(dock);	/* drawers and icons to the new column */
+	if (y != dock->y_pos)
+		moveDock(dock, dock->x_pos, y);
+}
+
 /* Snap a clip back onto a visible head after a RandR reconfiguration,
  * preserving its relative position within that head */
 void wClipSnapToHead(WDock *clip)
@@ -3503,6 +3713,9 @@ static void openDockMenu(WDock *dock, WAppIcon *aicon, XEvent *event)
 	if (dock->type == WM_DOCK) {
 		/* Dock position menu */
 		updateDockPositionMenu(scr->dock_pos_menu, dock);
+		/* Monitor menu */
+		++index;
+		updateDockMonitorMenu(scr);
 		dock->menu->flags.realized = 0;
 		if (!wPreferences.flags.nodrawer) {
 			/* add a drawer */
@@ -3740,6 +3953,7 @@ static void handleDockMove(WDock *dock, WAppIcon *aicon, XEvent *event)
 	int shad_x = x, shad_y = y;
 	XEvent ev;
 	int grabbed = 0, done, previously_on_right, now_on_right, previous_x_pos, i;
+	int head_changed = 0;
 	Pixmap ghost = None;
 	int superfluous = wPreferences.superfluous;	/* we catch it to avoid problems */
 
@@ -3806,7 +4020,40 @@ static void handleDockMove(WDock *dock, WAppIcon *aicon, XEvent *event)
 			case WM_DOCK:
 				x = ev.xmotion.x_root - ofs_x;
 				y = ev.xmotion.y_root - ofs_y;
-				if (previously_on_right)
+				/*
+				 * Several monitors: dragging the Dock into another
+				 * monitor moves it there, to the side of that monitor
+				 * nearest to the pointer, and remembers the monitor.
+				 */
+				if (wXineramaHeads(scr) > 1) {
+					int ph = wGetHeadForPoint(scr, wmkpoint(ev.xmotion.x_root, ev.xmotion.y_root));
+					int dh = dockPreferredHead(scr);
+
+					if (dh < 0)
+						dh = wGetHeadForPoint(scr, wmkpoint(dock->x_pos + ICON_SIZE / 2,
+										    dock->y_pos + ICON_SIZE / 2));
+					if (ph != dh) {
+						WMRect r = wGetRectForHead(scr, ph);
+
+						if (scr->dock_monitor)
+							wfree(scr->dock_monitor);
+						scr->dock_monitor = dockNameForHead(scr, ph);
+						dock->on_right_side = ev.xmotion.x_root >= r.pos.x + (int) r.size.width / 2;
+						wDockSwap(dock);
+						previously_on_right = now_on_right = dock->on_right_side;
+						previous_x_pos = dock->x_pos;
+						head_changed = 1;
+						wArrangeIcons(scr, False);
+					}
+				}
+				if (wXineramaHeads(scr) > 1 && dockPreferredHead(scr) >= 0)
+				{
+					/* several monitors: the half of the monitor under the pointer */
+					WMRect r = dockAreaRect(scr);
+
+					now_on_right = (ev.xmotion.x_root >= r.pos.x + (int) r.size.width / 2);
+				}
+				else if (previously_on_right)
 				{
 					now_on_right = (ev.xmotion.x_root >= previous_x_pos - ICON_SIZE);
 				}
@@ -3822,6 +4069,7 @@ static void handleDockMove(WDock *dock, WAppIcon *aicon, XEvent *event)
 				}
 				// Also perform the vertical move
 				wScreenKeepInside(scr, &x, &y, ICON_SIZE, ICON_SIZE);
+				y = dockClampY(scr, y);
 				moveDock(dock, dock->x_pos, y);
 				if (wPreferences.flags.wrap_appicons_in_dock)
 				{
@@ -3932,6 +4180,12 @@ static void handleDockMove(WDock *dock, WAppIcon *aicon, XEvent *event)
 				XUnmapWindow(dpy, scr->dock_shadow);
 				moveDock(dock, shad_x, shad_y);
 				XResizeWindow(dpy, scr->dock_shadow, ICON_SIZE, ICON_SIZE);
+			}
+			if (head_changed) {
+				/* the icon yards of both monitors changed */
+				wScreenUpdateUsableArea(scr);
+				wArrangeIcons(scr, True);
+				wScreenSaveState(scr);
 			}
 			done = 1;
 			break;

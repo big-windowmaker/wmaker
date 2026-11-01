@@ -30,6 +30,12 @@ void wRandRInit(WScreen *scr);
 void wRandRTeardown(WScreen *scr);
 void wRandRHandleNotify(WScreen *scr, XEvent *event);
 
+/* Head showing the active output with this connector name ("HDMI-A-0"),
+ * or -1 when that output is not connected/active. */
+int wRandRHeadForOutputName(WScreen *scr, const char *name);
+/* Connector name of the output shown on a head, or NULL. */
+const char *wRandROutputNameForHead(WScreen *scr, int head);
+
 #endif /* USE_RANDR */
 
 #endif /* _WMRANDR_H_ */
