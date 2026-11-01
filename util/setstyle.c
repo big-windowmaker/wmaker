@@ -114,6 +114,29 @@ static Bool isFontOption(const char *option)
  * that qualifies the external references to be absolute, possibly
  * pending further expansion
  */
+/*
+ * Make the file at position index of a texture relative to the theme
+ * directory. Absolute paths and paths relative to the home directory
+ * already point to the right file: prefixing them produced names like
+ * "/usr/share/WindowMaker/Themes/X.themed//usr/share/backgrounds/x.jpg".
+ */
+static void prefixTextureFile(WMPropList * texture, int index, const char *prefix)
+{
+	WMPropList *file;
+	const char *name;
+	char buffer[4018];
+
+	file = WMGetFromPLArray(texture, index);
+	name = file ? WMGetFromPLString(file) : NULL;
+	if (name == NULL || name[0] == '/' || name[0] == '~')
+		return;
+
+	snprintf(buffer, sizeof(buffer), "%s/%s", prefix, name);
+	/* replace path with full path */
+	WMDeleteFromPLArray(texture, index);
+	WMInsertInPLArray(texture, index, WMCreatePLString(buffer));
+}
+
 static void hackPathInTexture(WMPropList * texture, const char *prefix)
 {
 	WMPropList *type;
@@ -133,33 +156,13 @@ static void hackPathInTexture(WMPropList * texture, const char *prefix)
 	    strcasecmp(t, "tvgradient") == 0 ||
 	    strcasecmp(t, "thgradient") == 0 ||
 	    strcasecmp(t, "tdgradient") == 0) {
-		WMPropList *file;
-		char buffer[4018];
-
-		/* get pixmap file path */
-		file = WMGetFromPLArray(texture, 1);
-		sprintf(buffer, "%s/%s", prefix, WMGetFromPLString(file));
-		/* replace path with full path */
-		WMDeleteFromPLArray(texture, 1);
-		WMInsertInPLArray(texture, 1, WMCreatePLString(buffer));
+		/* pixmap file path */
+		prefixTextureFile(texture, 1, prefix);
 
 	} else if (strcasecmp(t, "bitmap") == 0) {
-		WMPropList *file;
-		char buffer[4018];
-
-		/* get bitmap file path */
-		file = WMGetFromPLArray(texture, 1);
-		sprintf(buffer, "%s/%s", prefix, WMGetFromPLString(file));
-		/* replace path with full path */
-		WMDeleteFromPLArray(texture, 1);
-		WMInsertInPLArray(texture, 1, WMCreatePLString(buffer));
-
-		/* get mask file path */
-		file = WMGetFromPLArray(texture, 2);
-		sprintf(buffer, "%s/%s", prefix, WMGetFromPLString(file));
-		/* replace path with full path */
-		WMDeleteFromPLArray(texture, 2);
-		WMInsertInPLArray(texture, 2, WMCreatePLString(buffer));
+		/* bitmap and mask file paths */
+		prefixTextureFile(texture, 1, prefix);
+		prefixTextureFile(texture, 2, prefix);
 	}
 }
 
