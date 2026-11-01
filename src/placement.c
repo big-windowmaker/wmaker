@@ -110,14 +110,20 @@ void PlaceIcon(WScreen *scr, int *x_ret, int *y_ret, int head)
 	int sw, sh;
 	int xo, yo;
 	int xs, ys;
-	int x, y;
 	int isize = wPreferences.icon_size;
 	int done = 0;
 	WMBagIterator iter;
 	WArea area = wGetUsableAreaForHead(scr, head, NULL, False);
 
-	/* Do not place icons under the dock. */
-	if (scr->dock) {
+	/* Default position */
+	*x_ret = 0;
+	*y_ret = 0;
+
+	/*
+	 * Do not place icons under the dock, but only on the head where the
+	 * dock is: with several monitors the other heads keep their full width.
+	 */
+	if (scr->dock && scr->dock->x_pos + isize > area.x1 && scr->dock->x_pos < area.x2) {
 		int offset = wPreferences.icon_size + DOCK_EXTRA_SPACE;
 
 		if (scr->dock->on_right_side)
@@ -136,10 +142,10 @@ void PlaceIcon(WScreen *scr, int *x_ret, int *y_ret, int head)
 	sw = sx2 - sx1;
 	sh = sy2 - sy1;
 
-	sw = isize * (sw / isize);
-	sh = isize * (sh / isize);
-	fullW = (sx2 - sx1) / isize;
-	fullH = (sy2 - sy1) / isize;
+	fullW = sw / isize;
+	fullH = sh / isize;
+	if (fullW < 1 || fullH < 1)
+		return;
 
 	/* icon yard boundaries */
 	if (wPreferences.icon_yard & IY_VERT) {
@@ -167,14 +173,19 @@ void PlaceIcon(WScreen *scr, int *x_ret, int *y_ret, int head)
 	/*
 	 * Create a map with the occupied slots. 1 means the slot is used
 	 * or at least partially used.
-	 * The slot usage can be optimized by only marking fully used slots
-	 * or slots that have most of it covered.
-	 * Space usage is worse than the fvwm algorithm (used in the old version)
-	 * but complexity is much better (faster) than it.
+	 *
+	 * Slots are counted from the corner of the icon yard (xo, yo), not from
+	 * the origin of the root window. With absolute coordinates the grid
+	 * of the map only matched the grid where icons are placed when the
+	 * head started at a multiple of the icon size: on a head at x = 3440
+	 * (or with a strut at the bottom) every icon also marked the next
+	 * slot as used, and each new appicon left a hole of one icon before
+	 * it. wArrangeIcons() places icons without this map, which is why
+	 * restarting Window Maker "fixed" the yard.
 	 */
-	map = wmalloc((sw + 2) * (sh + 2));
+	map = wmalloc((fullW + 2) * (fullH + 2));
 
-#define INDEX(x,y)	(((y)+1)*(sw+2) + (x) + 1)
+#define INDEX(c,r)	(((r)+1)*(fullW+2) + (c) + 1)
 
 	WM_ETARETI_BAG(scr->stacking_list, obj, iter) {
 
@@ -182,38 +193,43 @@ void PlaceIcon(WScreen *scr, int *x_ret, int *y_ret, int head)
 			int x, y;
 
 			if (iconPosition(obj, sx1, sy1, sx2, sy2, scr->current_workspace, &x, &y)) {
-				int xdi, ydi;	/* rounded down */
-				int xui, yui;	/* rounded up */
+				/* distance from the yard corner, in the yard's direction */
+				int dx = (x - xo) * xs;
+				int dy = (y - yo) * ys;
+				int cd, rd;	/* rounded down */
+				int cu, ru;	/* rounded up */
 
-				xdi = x / isize;
-				ydi = y / isize;
-				xui = (x + isize / 2) / isize;
-				yui = (y + isize / 2) / isize;
-				map[INDEX(xdi, ydi)] = 1;
-				map[INDEX(xdi, yui)] = 1;
-				map[INDEX(xui, ydi)] = 1;
-				map[INDEX(xui, yui)] = 1;
+				cd = dx >= 0 ? dx / isize : -1;
+				rd = dy >= 0 ? dy / isize : -1;
+				cu = (dx + isize / 2) >= 0 ? (dx + isize / 2) / isize : -1;
+				ru = (dy + isize / 2) >= 0 ? (dy + isize / 2) / isize : -1;
+				cd = WMIN(WMAX(cd, -1), fullW);
+				cu = WMIN(WMAX(cu, -1), fullW);
+				rd = WMIN(WMAX(rd, -1), fullH);
+				ru = WMIN(WMAX(ru, -1), fullH);
+				map[INDEX(cd, rd)] = 1;
+				map[INDEX(cd, ru)] = 1;
+				map[INDEX(cu, rd)] = 1;
+				map[INDEX(cu, ru)] = 1;
 			}
 			obj = obj->stacking->under;
 		}
 	}
-	/* Default position */
-	*x_ret = 0;
-	*y_ret = 0;
-
 	/* Look for an empty slot */
 	for (si = 0; si < sf; si++) {
 		for (pi = 0; pi < pf; pi++) {
+			int c, r;
+
 			if (wPreferences.icon_yard & IY_VERT) {
-				x = xo + xs * (si * isize);
-				y = yo + ys * (pi * isize);
+				c = si;
+				r = pi;
 			} else {
-				x = xo + xs * (pi * isize);
-				y = yo + ys * (si * isize);
+				c = pi;
+				r = si;
 			}
-			if (!map[INDEX(x / isize, y / isize)]) {
-				*x_ret = x;
-				*y_ret = y;
+			if (!map[INDEX(c, r)]) {
+				*x_ret = xo + xs * (c * isize);
+				*y_ret = yo + ys * (r * isize);
 				done = 1;
 				break;
 			}
@@ -221,6 +237,7 @@ void PlaceIcon(WScreen *scr, int *x_ret, int *y_ret, int head)
 		if (done)
 			break;
 	}
+#undef INDEX
 
 	wfree(map);
 }

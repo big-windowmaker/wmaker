@@ -2169,7 +2169,8 @@ void wArrangeIcons(WScreen *scr, Bool arrangeAll)
 		WArea area = wGetUsableAreaForHead(scr, head, NULL, False);
 		WMRect rect;
 
-		if (scr->dock) {
+		/* only the head where the dock is loses the dock column */
+		if (scr->dock && scr->dock->x_pos + isize > area.x1 && scr->dock->x_pos < area.x2) {
 			int offset = wPreferences.icon_size + DOCK_EXTRA_SPACE;
 
 			if (scr->dock->on_right_side)
