@@ -48,7 +48,7 @@ wmagnify_LDADD = \
 	$(top_builddir)/WINGs/libWINGs.la \
 	$(top_builddir)/WINGs/libWUtil.la \
 	$(top_builddir)/wrlib/libwraster.la \
-	@XLFLAGS@ @XLIBS@ @INTLIBS@
+	@XLFLAGS@ @XLIBS@ @INTLIBS@ @LIBM@
 
 wmsetbg_LDADD = \
 	$(top_builddir)/WINGs/libWINGs.la \

@@ -22,14 +22,30 @@ Show the magnified area on this \fIdisplay\fR.
 print a help message with the list of options.
 .TP
 .BR \-m " \fIfactor\fP"
-Change the magnification factor, default is 2. You can change this also while
-running the program, using the keys described below.
+Change the magnification factor, from 1 to 16 (fractions allowed), default is
+2. You can change this also while running the program, with the mouse wheel or
+the keys described below.
+.TP
+.B \-noabove
+Do not keep the window above the other windows.
 .TP
 .BR \-r " \fIdelay\fP"
-Change the refresh delay, in milliseconds. Default is 200.
+Change the refresh delay, in milliseconds. Default is 33 (30 frames per
+second); a frame whose content did not change is not drawn again.
+.TP
+.B \-smooth
+Smooth (bilinear) scaling instead of pixel-perfect.
 .TP
 .BR \-vdisplay " \fIdisplay\fP"
 Take the area to be magnified from this \fIdisplay\fP instead of using the same display as for visualisation.
+
+.SH MOUSE
+.TP
+.B wheel up, wheel down
+Zoom in and out (1x to 16x, in steps such as 1.5x and 2.5x).
+.TP
+.B middle button
+Back to 2x.
 
 .SH KEYS
 The following keys can be pressed while \fBwmagnify\fR is running to change its
@@ -37,6 +53,18 @@ behaviour.
 .TP
 .BR 1 , 2 , 3 , 4 ,  5 , 6 , 7 , 8 , 9
 Change the magnification factor.
+.TP
+.BR + ", " \-
+Zoom in and out in smaller steps.
+.TP
+.B 0
+Back to 2x.
+.TP
+.B s
+Switch between pixel-perfect and smooth scaling.
+.TP
+.B a
+Keep the window above the other windows, or not.
 .TP
 .BR <space> ", " f
 Freeze the camera, making it magnify only the current position.
@@ -46,6 +74,12 @@ Create a new window.
 .TP
 .B m
 Show/hide the pointer hot spot mark.
+
+.SH ENVIRONMENT
+.TP
+.B WMAGNIFY_STATS
+When set, frames per second and the time spent capturing, scaling and drawing
+are printed on the standard error every 5 seconds.
 
 .SH SEE ALSO
 .BR xmag (1),
