@@ -1822,6 +1822,37 @@ msgstr "dados inválidos na seleção"
 msgid "Based on Window Maker"
 msgstr "Baseado no Window Maker"
 
+#: ../src/dock.c
+msgid "Dock position"
+msgstr "Posição do Dock"
+
+#: ../src/dock.c
+msgid "Monitor"
+msgstr "Monitor"
+
+#: ../src/dock.c
+msgid "Primary monitor"
+msgstr "Monitor principal"
+
+#: ../src/dock.c
+#, c-format
+msgid "Monitor %d (%ux%u)"
+msgstr "Monitor %d (%ux%u)"
+
+#: ../src/dock.c
+#, c-format
+msgid "Monitor %d: %s (%ux%u)"
+msgstr "Monitor %d: %s (%ux%u)"
+
+#: ../src/dock.c
+#, c-format
+msgid "%s (disconnected)"
+msgstr "%s (desconectado)"
+
+#: ../src/dock.c
+msgid "Edge of the whole screen"
+msgstr "Borda da tela inteira"
+
 #~ msgid "out of memory while updating GNOME hints"
 #~ msgstr "faltou memória enquanto estava atualizando as dicas do GNOME"
 
