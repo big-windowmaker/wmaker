@@ -54,6 +54,7 @@
 #include "shutdown.h"
 #include "xmodifier.h"
 #include "rootmenu.h"
+#include "dock.h"
 #include "startup.h"
 #include "switchmenu.h"
 
@@ -218,6 +219,12 @@ static void refreshCommand(WMenu * menu, WMenuEntry * entry)
 	(void) entry;
 
 	wRefreshDesktop(menu->frame->screen_ptr);
+}
+
+static void resetDockCommand(WMenu * menu, WMenuEntry * entry)
+{
+	(void) entry;
+	wDockResetPosition(menu->frame->screen_ptr);
 }
 
 static void arrangeIconsCommand(WMenu * menu, WMenuEntry * entry)
@@ -961,6 +968,10 @@ static WMenuEntry *addMenuEntry(WMenu *menu, const char *title, const char *shor
 		shortcutOk = True;
 	} else if (strcmp(command, "ARRANGE_ICONS") == 0) {
 		entry = wMenuAddCallback(menu, title, arrangeIconsCommand, NULL);
+
+		shortcutOk = True;
+	} else if (strcmp(command, "RESET_DOCK") == 0) {
+		entry = wMenuAddCallback(menu, title, resetDockCommand, NULL);
 
 		shortcutOk = True;
 	} else if (strcmp(command, "HIDE_OTHERS") == 0) {

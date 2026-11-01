@@ -94,6 +94,9 @@ void wDockSwap(WDock *dock);
 /* Moves the Dock (and its drawers) to the monitor chosen for it, or the
  * primary monitor when that one is not connected, inside its bounds. */
 void wDockUpdateHead(WScreen *scr);
+/* "Restore Dock position": primary monitor, outer edge, top, in front;
+ * the Dock contents and level are kept. */
+void wDockResetPosition(WScreen *scr);
 void wClipSnapToHead(WDock *clip);
 
 #ifdef USE_DOCK_XDND

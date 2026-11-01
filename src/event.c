@@ -1063,6 +1063,13 @@ static void handleClientMessage(XEvent * event)
 		if (strncmp(command, "Reconfigure", sizeof("Reconfigure")) == 0) {
 			wwarning(_("Got Reconfigure command"));
 			wDefaultsCheckDomains(NULL);
+		} else if (strncmp(command, "ResetDock", sizeof("ResetDock")) == 0) {
+			/* big-wm-dock-reset: the Dock back to a visible place when its
+			 * own menu cannot be reached */
+			WScreen *cscr = wScreenForRootWindow(event->xclient.window);
+
+			if (cscr)
+				wDockResetPosition(cscr);
 		} else {
 			wwarning(_("Got unknown command %s"), command);
 		}

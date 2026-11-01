@@ -133,6 +133,10 @@ static void drawerConsolidateIcons(WDock *drawer);
 
 static int onScreen(WScreen *scr, int x, int y);
 static void updateDockMonitorMenu(WScreen *scr);
+static Bool dockSideIsOuterEdge(WScreen *scr, WMRect r, Bool right);
+static Bool dockIsVisible(WScreen *scr, WDock *dock);
+static Bool dockBestSide(WScreen *scr, WMRect r, Bool preferred);
+static void dockRaiseOnce(WDock *dock);
 static void moveDock(WDock *dock, int new_x, int new_y);
 
 static void make_keys(void)
@@ -1275,11 +1279,35 @@ static void setDockMonitorCallback(WMenu *menu, WMenuEntry *entry)
 		wfree(scr->dock_monitor);
 	scr->dock_monitor = (name && *name) ? wstrdup(name) : NULL;
 
+	/* On the new monitor, the side that is an edge of the whole screen
+	 * when the current one is a seam between two monitors. */
+	if (scr->dock && dockPreferredHead(scr) >= 0) {
+		WMRect r = dockAreaRect(scr);
+		Bool side = dockBestSide(scr, r, scr->dock->on_right_side);
+
+		if (side != scr->dock->on_right_side) {
+			scr->dock->on_right_side = side;
+			wDockSwap(scr->dock);
+		}
+	}
 	wDockUpdateHead(scr);
+	if (scr->dock && !dockIsVisible(scr, scr->dock)) {
+		wDockResetPosition(scr);
+		return;
+	}
+	if (scr->dock)
+		dockRaiseOnce(scr->dock);
 	wScreenUpdateUsableArea(scr);
 	wArrangeIcons(scr, True);
-	/* the choice survives a crash or a forced logout */
+	/* the choice survives a crash or a forced logout; saved only now that
+	 * the Dock is known to be on a monitor */
 	wScreenSaveState(scr);
+}
+
+static void resetDockPositionCallback(WMenu *menu, WMenuEntry *entry)
+{
+	(void) entry;
+	wDockResetPosition(menu->frame->screen_ptr);
 }
 
 static void addDockMonitorEntry(WMenu *menu, const char *text, const char *value, Bool on)
@@ -1341,6 +1369,7 @@ static void updateDockMonitorMenu(WScreen *scr)
 	if (heads > 1)
 		addDockMonitorEntry(menu, _("Edge of the whole screen"), "",
 				    !pref && !wPreferences.keep_dock_on_primary_head);
+	wMenuAddCallback(menu, _("Restore Dock position"), resetDockPositionCallback, NULL);
 
 	menu->flags.realized = 0;
 	wMenuRealize(menu);
@@ -3245,6 +3274,115 @@ void wDockSwap(WDock *dock)
 	wScreenUpdateUsableArea(scr);
 }
 
+/* TRUE when no other monitor touches this side of the head: the Dock is
+ * easy to find there (the pointer stops at the edge of the screen), while
+ * on the seam between two monitors windows of the other one and the
+ * pointer go past it. */
+static Bool dockSideIsOuterEdge(WScreen *scr, WMRect r, Bool right)
+{
+	int edge = right ? r.pos.x + (int) r.size.width : r.pos.x;
+	int i;
+
+	for (i = 0; i < wXineramaHeads(scr); i++) {
+		WMRect o = wGetRectForHead(scr, i);
+		int touch = right ? o.pos.x : o.pos.x + (int) o.size.width;
+
+		if (touch == edge && o.pos.y < r.pos.y + (int) r.size.height &&
+		    r.pos.y < o.pos.y + (int) o.size.height)
+			return False;
+	}
+	return True;
+}
+
+/* The Clip sits in that column (its first tile). */
+static Bool dockClipAt(WScreen *scr, int x)
+{
+	return !wPreferences.flags.noclip && scr->clip_icon &&
+		abs(scr->clip_icon->x_pos - x) < ICON_SIZE;
+}
+
+/* Side of the head for the Dock: "preferred" when it is an edge of the
+ * whole screen and free of the Clip, else the other side when that one
+ * is, else any side free of the Clip, else "preferred". */
+static Bool dockBestSide(WScreen *scr, WMRect r, Bool preferred)
+{
+	Bool c[2] = { preferred, !preferred };
+	int i;
+
+	for (i = 0; i < 2; i++) {
+		int x = c[i] ? r.pos.x + (int) r.size.width - ICON_SIZE - DOCK_EXTRA_SPACE : r.pos.x + DOCK_EXTRA_SPACE;
+
+		if (dockSideIsOuterEdge(scr, r, c[i]) && !dockClipAt(scr, x))
+			return c[i];
+	}
+	for (i = 0; i < 2; i++) {
+		int x = c[i] ? r.pos.x + (int) r.size.width - ICON_SIZE - DOCK_EXTRA_SPACE : r.pos.x + DOCK_EXTRA_SPACE;
+
+		if (!dockClipAt(scr, x))
+			return c[i];
+	}
+	return preferred;
+}
+
+/* The first tile of the Dock entirely inside some monitor. */
+static Bool dockIsVisible(WScreen *scr, WDock *dock)
+{
+	int i;
+
+	for (i = 0; i < wXineramaHeads(scr); i++) {
+		WMRect r = wGetRectForHead(scr, i);
+
+		if (dock->x_pos >= r.pos.x && dock->y_pos >= r.pos.y &&
+		    dock->x_pos + ICON_SIZE <= r.pos.x + (int) r.size.width &&
+		    dock->y_pos + ICON_SIZE <= r.pos.y + (int) r.size.height)
+			return True;
+	}
+	return False;
+}
+
+/* Brings the Dock and its drawers in front once, so it is seen where it
+ * went even when it is kept below the windows ("Normal" level). */
+static void dockRaiseOnce(WDock *dock)
+{
+	int i;
+
+	for (i = 0; i < dock->max_icons; i++)
+		if (dock->icon_array[i])
+			wRaiseFrame(dock->icon_array[i]->icon->core);
+}
+
+/*
+ * "Restore Dock position": the primary monitor, on the outer edge of the
+ * screen when it has one (right by default), at the top, in front of the
+ * windows. The applications in the Dock, its drawers and its level are
+ * kept. Also run when the Dock is found outside every monitor.
+ */
+void wDockResetPosition(WScreen *scr)
+{
+	WDock *dock = scr->dock;
+	WMRect r;
+	Bool right;
+
+	if (!dock)
+		return;
+	if (scr->dock_monitor)
+		wfree(scr->dock_monitor);
+	scr->dock_monitor = wstrdup("primary");
+	r = wGetRectForHead(scr, scr->xine_info.primary_head);
+	right = dockBestSide(scr, r, True);
+	if (right != dock->on_right_side) {
+		dock->on_right_side = right;
+		wDockSwap(dock);
+	} else {
+		wDockSwap(dock);	/* x of the primary monitor */
+	}
+	moveDock(dock, dock->x_pos, r.pos.y);
+	dockRaiseOnce(dock);
+	wScreenUpdateUsableArea(scr);
+	wArrangeIcons(scr, True);
+	wScreenSaveState(scr);
+}
+
 void wDockUpdateHead(WScreen *scr)
 {
 	WDock *dock = scr->dock;
@@ -3261,6 +3399,10 @@ void wDockUpdateHead(WScreen *scr)
 		wDockSwap(dock);	/* drawers and icons to the new column */
 	if (y != dock->y_pos)
 		moveDock(dock, dock->x_pos, y);
+	if (!dockIsVisible(scr, dock)) {
+		wwarning(_("the Dock was outside every monitor; moving it to the primary one"));
+		wDockResetPosition(scr);
+	}
 }
 
 /* Snap a clip back onto a visible head after a RandR reconfiguration,

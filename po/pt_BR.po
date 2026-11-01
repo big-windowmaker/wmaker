@@ -1853,6 +1853,14 @@ msgstr "%s (desconectado)"
 msgid "Edge of the whole screen"
 msgstr "Borda da tela inteira"
 
+#: ../src/dock.c
+msgid "Restore Dock position"
+msgstr "Restaurar posição do Dock"
+
+#: ../src/dock.c
+msgid "the Dock was outside every monitor; moving it to the primary one"
+msgstr "o Dock estava fora de todos os monitores; movido para o principal"
+
 #~ msgid "out of memory while updating GNOME hints"
 #~ msgstr "faltou memória enquanto estava atualizando as dicas do GNOME"
 
