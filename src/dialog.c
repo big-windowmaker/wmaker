@@ -43,7 +43,7 @@
 #endif
 
 #include <signal.h>
-#include <fontconfig/fontconfig.h>
+#include <math.h>
 #ifdef __FreeBSD__
 #include <sys/signal.h>
 #endif
@@ -1152,8 +1152,10 @@ typedef struct {
 	WMLabel *name2L;
 	WMLabel *versionL;
 	WMLabel *infoL;
-	WMLabel *copyleftL;
 	WMLabel *copyrL;
+	WMFrame *customSepF;     /* Big WindowMaker: credits of the edition, at the end */
+	WMLabel *customTitleL;
+	WMLabel *customNamesL;
 } InfoPanel;
 
 #define COPYRIGHT_TEXT  \
@@ -1162,50 +1164,69 @@ typedef struct {
     "Copyright \xc2\xa9 2013-%hu Window Maker Developers Team"
 
 /*
- * Big WindowMaker: crédito da edição. O aviso de copyright do Window Maker
- * (COPYRIGHT_TEXT) continua no painel, logo abaixo, como pede a GPL (seção
- * 2c) para programas interativos.
+ * Big WindowMaker: créditos da edição, no fim do painel, depois de um
+ * divisor. O aviso de copyright do Window Maker (COPYRIGHT_TEXT) continua
+ * no painel, acima deles, como pede a GPL (seção 2c) para programas
+ * interativos: é uma questão de apresentação, não de titularidade.
  */
-#define BIG_WM_NAME           "Big WindowMaker"
-#define BIG_WM_COPYLEFT_YEAR  2026
-#define BIG_WM_COPYLEFT_OWNER "Rafael Ruscher"
+#define BIG_WM_NAME          "Big WindowMaker"
+#define BIG_WM_CUSTOM_TITLE  "Big WindowMaker Custom"
+static const char *const big_wm_custom_authors[] = {
+	"Rafael Ruscher",
+	"Barnab\xc3\xa9 Di Kartola",	/* Barnabé */
+};
 
 /*
- * Símbolo de copyleft (o "c" virado). U+1F12F só existe em poucas fontes
- * (Noto Sans Symbols, Source Han Sans, Symbola...); sem nenhuma delas o
- * Pango desenharia um quadrado com o código do caractere. Nesse caso usa
- * "(\xc9\x94)" (U+0254 entre parênteses), que DejaVu Sans e Noto Sans têm.
+ * Símbolo de copyleft (U+1F12F, o "C" invertido num círculo), desenhado
+ * aqui em vez de vir de uma fonte: quase nenhuma fonte de interface tem
+ * o caractere, e o da fonte de reserva (Noto Sans Symbols) saía pequeno e
+ * fora da linha de base. Cobertura calculada com 4x4 amostras por pixel
+ * (antialiasing), na cor do texto: um anel externo e, dentro, um arco
+ * aberto para a esquerda.
  */
-static const char *copyleftSymbol(void)
+static WMPixmap *makeCopyleftPixmap(WScreen *scr, int size, const RColor *color)
 {
-	FcPattern *pattern;
-	FcCharSet *charset;
-	FcObjectSet *objects;
-	FcFontSet *fonts;
-	int found = 0;
+	const int ss = 4;
+	double c = size / 2.0;
+	double ro = size / 2.0 - 0.25;            /* anel externo */
+	double stroke = WMAX(1.0, size / 11.0);
+	double ri = size * 0.25;                   /* arco interno */
+	RImage *img;
+	WMPixmap *pix;
+	int x, y, i, j;
 
-	if (!FcInit())
-		return "(\xc9\x94)";
+	img = RCreateImage(size, size, True);
+	if (!img)
+		return NULL;
 
-	pattern = FcPatternCreate();
-	charset = FcCharSetCreate();
-	objects = FcObjectSetBuild(FC_FAMILY, NULL);
-	if (pattern && charset && objects && FcCharSetAddChar(charset, 0x1F12F)
-	    && FcPatternAddCharSet(pattern, FC_CHARSET, charset)) {
-		fonts = FcFontList(NULL, pattern, objects);
-		if (fonts) {
-			found = fonts->nfont > 0;
-			FcFontSetDestroy(fonts);
+	for (y = 0; y < size; y++) {
+		for (x = 0; x < size; x++) {
+			int hits = 0;
+			unsigned char *p = img->data + 4 * (y * size + x);
+
+			for (j = 0; j < ss; j++) {
+				for (i = 0; i < ss; i++) {
+					double dx = x + (i + 0.5) / ss - c;
+					double dy = y + (j + 0.5) / ss - c;
+					double d = sqrt(dx * dx + dy * dy);
+
+					if (d <= ro && d >= ro - stroke)
+						hits++;
+					else if (fabs(d - ri) <= stroke / 2.0 &&
+						 !(dx < 0 && fabs(dy) < -dx * 1.2))
+						hits++;	/* aberto à esquerda */
+				}
+			}
+			p[0] = color->red;
+			p[1] = color->green;
+			p[2] = color->blue;
+			p[3] = (unsigned char) (255 * hits / (ss * ss));
 		}
 	}
-	if (objects)
-		FcObjectSetDestroy(objects);
-	if (charset)
-		FcCharSetDestroy(charset);
-	if (pattern)
-		FcPatternDestroy(pattern);
 
-	return found ? "\xf0\x9f\x84\xaf" : "(\xc9\x94)";
+	pix = WMCreatePixmapFromRImage(scr->wmscreen, img, 127);
+	RReleaseImage(img);
+	return pix;
 }
 
 /* Largura, em pixels, da linha mais longa de um texto com várias linhas. */
@@ -1415,28 +1436,9 @@ void wShowInfoPanel(WScreen *scr)
 	WMSetLabelText(panel->versionL, buffer);
 	WMSetLabelWraps(panel->versionL, False);
 
-	panel->copyleftL = WMCreateLabel(panel->win);
-	WMResizeWidget(panel->copyleftL, WMScaleX(402), WMScaleY(16));
-	WMMoveWidget(panel->copyleftL, WMScaleX(15), WMScaleY(224));
-	WMSetLabelTextAlignment(panel->copyleftL, WALeft);
-	WMSetLabelWraps(panel->copyleftL, False);
-	if (current_year > BIG_WM_COPYLEFT_YEAR)
-		snprintf(buffer, sizeof(buffer), "Copyleft %s %d-%d " BIG_WM_COPYLEFT_OWNER,
-			 copyleftSymbol(), BIG_WM_COPYLEFT_YEAR, current_year);
-	else
-		snprintf(buffer, sizeof(buffer), "Copyleft %s %d " BIG_WM_COPYLEFT_OWNER,
-			 copyleftSymbol(), BIG_WM_COPYLEFT_YEAR);
-	WMSetLabelText(panel->copyleftL, buffer);
-	font = WMBoldSystemFontOfSize(scr->wmscreen, WMScaleY(11));
-	if (font) {
-		WMSetLabelFont(panel->copyleftL, font);
-		WMReleaseFont(font);
-		font = NULL;
-	}
-
 	panel->copyrL = WMCreateLabel(panel->win);
 	WMResizeWidget(panel->copyrL, WMScaleX(402), WMScaleY(50));
-	WMMoveWidget(panel->copyrL, WMScaleX(15), WMScaleY(240));
+	WMMoveWidget(panel->copyrL, WMScaleX(15), WMScaleY(222));
 	WMSetLabelTextAlignment(panel->copyrL, WALeft);
 
 	snprintf(buffer, sizeof(buffer), COPYRIGHT_TEXT, current_year);
@@ -1588,6 +1590,70 @@ void wShowInfoPanel(WScreen *scr)
 		font = NULL;
 	}
 	wfree(strbuf);
+
+	/*
+	 * Big WindowMaker: créditos da edição no fim, depois de um divisor
+	 * entalhado (o mesmo relevo dos grupos do WPrefs), com o título em
+	 * negrito e um nome por linha, centralizados. Montados aqui, depois
+	 * da linha de informações, porque ela pode ter alargado o painel.
+	 */
+	{
+		int y = WMScaleY(282);
+		int names_h = WMScaleY(16) * (int) wlengthof(big_wm_custom_authors);
+		size_t i;
+
+		panel->customSepF = WMCreateFrame(panel->win);
+		WMResizeWidget(panel->customSepF, pwidth - 2 * WMScaleX(15), 2);
+		WMMoveWidget(panel->customSepF, WMScaleX(15), y);
+		WMSetFrameRelief(panel->customSepF, WRGroove);
+		y += WMScaleY(8);
+
+		panel->customTitleL = WMCreateLabel(panel->win);
+		WMResizeWidget(panel->customTitleL, pwidth - 2 * WMScaleX(15), WMScaleY(18));
+		WMMoveWidget(panel->customTitleL, WMScaleX(15), y);
+		WMSetLabelTextAlignment(panel->customTitleL, WACenter);
+		WMSetLabelWraps(panel->customTitleL, False);
+		WMSetLabelText(panel->customTitleL, BIG_WM_CUSTOM_TITLE);
+		font = WMBoldSystemFontOfSize(scr->wmscreen, WMScaleY(12));
+		if (font) {
+			WMSetLabelFont(panel->customTitleL, font);
+			WMReleaseFont(font);
+			font = NULL;
+		}
+		y += WMScaleY(20);
+
+		font = WMSystemFontOfSize(scr->wmscreen, WMScaleY(11));
+		for (i = 0; font && i < wlengthof(big_wm_custom_authors); i++) {
+			const char *who = big_wm_custom_authors[i];
+			int sym = WMFontHeight(font) - WMScaleY(3);
+			int lw = sym + WMScaleX(5) + WMWidthOfString(font, who, strlen(who)) + 4;
+			RColor black = { 0, 0, 0, 255 };
+			WMPixmap *pix = makeCopyleftPixmap(scr, sym, &black);
+			WMLabel *label = WMCreateLabel(panel->win);
+
+			WMResizeWidget(label, lw, WMScaleY(16));
+			WMMoveWidget(label, (pwidth - lw) / 2, y + i * WMScaleY(16));
+			WMSetLabelFont(label, font);
+			WMSetLabelTextAlignment(label, WALeft);
+			WMSetLabelWraps(label, False);
+			if (pix) {
+				WMSetLabelImage(label, pix);
+				WMSetLabelImagePosition(label, WIPLeft);
+				WMReleasePixmap(pix);
+			}
+			WMSetLabelText(label, who);
+			if (i == 0)
+				panel->customNamesL = label;
+		}
+		if (font) {
+			WMReleaseFont(font);
+			font = NULL;
+		}
+		y += names_h + WMScaleY(12);
+
+		pheight = y;
+		WMResizeWidget(panel->win, pwidth, pheight);
+	}
 
 	WMRealizeWidget(panel->win);
 	WMMapSubwidgets(panel->win);
