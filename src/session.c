@@ -81,6 +81,8 @@
 #include "appicon.h"
 #include "dock.h"
 #include "misc.h"
+#include "wmspec.h"
+#include "wdefaults.h"
 
 #include <WINGs/WUtil.h>
 
@@ -288,6 +290,7 @@ void wSessionSaveState(WScreen * scr)
 	WMPropList *win_info, *wks;
 	WMPropList *list = NULL;
 	WMArray *wapp_list = NULL;
+	WMArray *pid_list = NULL;
 
 	make_keys();
 
@@ -300,10 +303,25 @@ void wSessionSaveState(WScreen * scr)
 	list = WMCreatePLArray(NULL);
 
 	wapp_list = WMCreateArray(16);
+	pid_list = WMCreateArray(16);
 
 	while (wwin) {
 		WApplication *wapp = wApplicationOf(wwin->main_window);
 		Window appId = wwin->orig_main_window;
+		int pid = wNETWMGetPidForWindow(wwin->client_win);
+
+		/*
+		 * With a shared application icon every window is saved, so that
+		 * programs started once per window (xterm) come back with all of
+		 * them. A program that owns several windows in one process (a
+		 * browser, a file manager) is started only once, though: it
+		 * restores its own windows, and starting it again for each one
+		 * would open extra windows.
+		 */
+		if (pid > 0 && WMGetFirstInArray(pid_list, (void *)(intptr_t)pid) != WANotFound) {
+			wwin = wwin->prev;
+			continue;
+		}
 
 		if ((wwin->transient_for == None || wwin->transient_for == wwin->screen_ptr->root_win)
 		    && (WMGetFirstInArray(wapp_list, (void *)appId) == WANotFound
@@ -320,6 +338,8 @@ void wSessionSaveState(WScreen * scr)
 				 * application are saved.
 				 */
 				WMAddToArray(wapp_list, (void *)appId);
+				if (pid > 0)
+					WMAddToArray(pid_list, (void *)(intptr_t)pid);
 			}
 		}
 		wwin = wwin->prev;
@@ -333,6 +353,7 @@ void wSessionSaveState(WScreen * scr)
 	WMReleasePropList(wks);
 
 	WMFreeArray(wapp_list);
+	WMFreeArray(pid_list);
 }
 
 void wSessionClearState(WScreen * scr)
@@ -489,6 +510,24 @@ void wSessionRestoreState(WScreen *scr)
 		ParseWindowName(value, &instance, &class, "session");
 		if (!instance && !class)
 			continue;
+
+		/* saved before the program was marked "DontSaveSession" (a part
+		 * of the desktop session that is started by other means): not
+		 * started a second time */
+		{
+			WWindowAttributes attr, mask;
+
+			memset(&attr, 0, sizeof(attr));
+			memset(&mask, 0, sizeof(mask));
+			wDefaultFillAttributes(instance, class, &attr, &mask, True);
+			if (attr.dont_save_session) {
+				if (instance)
+					wfree(instance);
+				if (class)
+					wfree(class);
+				continue;
+			}
+		}
 
 		state = getWindowState(scr, win_info);
 
