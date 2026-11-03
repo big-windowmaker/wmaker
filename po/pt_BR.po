@@ -1819,8 +1819,8 @@ msgid "invalid data in selection"
 msgstr "dados inválidos na seleção"
 
 #: ../src/dialog.c
-msgid "Based on Window Maker"
-msgstr "Baseado no Window Maker"
+msgid "Based on BigLinux"
+msgstr "Baseado no BigLinux"
 
 #: ../src/dock.c
 msgid "Dock position"

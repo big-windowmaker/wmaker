@@ -1426,7 +1426,7 @@ void wShowInfoPanel(WScreen *scr)
 		font = NULL;
 	}
 	WMSetLabelTextAlignment(panel->name2L, WACenter);
-	WMSetLabelText(panel->name2L, _("Based on Window Maker"));
+	WMSetLabelText(panel->name2L, _("Based on BigLinux"));
 
 	snprintf(buffer, sizeof(buffer), _("Version %s"), VERSION);
 	panel->versionL = WMCreateLabel(panel->win);
