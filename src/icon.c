@@ -253,9 +253,148 @@ static void drawIconTitleBackground(WScreen *scr, Pixmap pixmap, int height)
 		  wPreferences.icon_size - 1, 0, wPreferences.icon_size - 1, height + 1);
 }
 
+/*
+ * Big WindowMaker: ícones padronizados (EnforceIconMargin = YES).
+ *
+ * A imagem do aplicativo cabe numa área de 3/4 do ladrilho (48 pixels num
+ * ladrilho de 64), reduzida pela média de área e sem deformar; uma
+ * imagem menor fica como está (ampliar um XPM de 32 pixels só o borraria).
+ * Assim um ícone que ocupa a tela inteira do PNG (OBS Studio) tem a mesma
+ * margem dos outros.
+ *
+ * Embaixo dela, uma sombra suave como a do clip.tiff: o alfa da própria
+ * imagem, preto, desfocado e deslocado para baixo e para a direita. Só para
+ * imagens com alfa (um retângulo opaco não ganha uma sombra retangular) e
+ * fora do Clip, cujo ícone já tem a sombra desenhada.
+ */
+/*
+ * Redução por média de área, com alfa: cada pixel novo é a média dos pixels
+ * que ele cobre (com as frações nas bordas), em cores pré-multiplicadas
+ * para que as bordas transparentes não escureçam. O RSmoothScaleImage do
+ * wrlib descarta o alfa.
+ */
+RImage *wIconScaleArea(RImage *src, int w, int h)
+{
+	int sch = src->format == RRGBAFormat ? 4 : 3;
+	double fx = (double)src->width / w, fy = (double)src->height / h;
+	RImage *dst = RCreateImage(w, h, True);
+	int dx, dy, ix, iy;
+
+	if (!dst)
+		return NULL;
+	for (dy = 0; dy < h; dy++) {
+		double sy0 = dy * fy, sy1 = (dy + 1) * fy;
+
+		for (dx = 0; dx < w; dx++) {
+			double sx0 = dx * fx, sx1 = (dx + 1) * fx;
+			double r = 0, g = 0, b = 0, a = 0, total = 0;
+			unsigned char *out = dst->data + 4 * (dy * w + dx);
+
+			for (iy = (int)sy0; iy < (int)src->height && iy < sy1; iy++) {
+				double wy = WMIN(sy1, iy + 1) - WMAX(sy0, iy);
+
+				for (ix = (int)sx0; ix < (int)src->width && ix < sx1; ix++) {
+					double wx = WMIN(sx1, ix + 1) - WMAX(sx0, ix);
+					const unsigned char *p = src->data + sch * (iy * src->width + ix);
+					double pa = (sch == 4 ? p[3] : 255) / 255.0, k = wx * wy;
+
+					r += p[0] * pa * k;
+					g += p[1] * pa * k;
+					b += p[2] * pa * k;
+					a += pa * k;
+					total += k;
+				}
+			}
+			if (a > 0) {
+				out[0] = (unsigned char)WMIN(255, r / a + 0.5);
+				out[1] = (unsigned char)WMIN(255, g / a + 0.5);
+				out[2] = (unsigned char)WMIN(255, b / a + 0.5);
+			} else {
+				out[0] = out[1] = out[2] = 0;
+			}
+			out[3] = total > 0 ? (unsigned char)WMIN(255, 255 * a / total + 0.5) : 0;
+		}
+	}
+	return dst;
+}
+
+static RImage *icon_fit_content(RImage *image, int box)
+{
+	int w = image->width, h = image->height;
+
+	if (box < 1 || (w <= box && h <= box))
+		return NULL;
+	if (w >= h) {
+		h = WMAX(1, (h * box + w / 2) / w);
+		w = box;
+	} else {
+		w = WMAX(1, (w * box + h / 2) / h);
+		h = box;
+	}
+	return wIconScaleArea(image, w, h);
+}
+
+/* Desfoque de caixa (raio r) só no canal alfa, linhas e colunas. */
+static void icon_blur_alpha(unsigned char *a, int w, int h, int r)
+{
+	unsigned char *tmp = wmalloc(w * h);
+	int x, y, k;
+
+	for (y = 0; y < h; y++)
+		for (x = 0; x < w; x++) {
+			int sum = 0, n = 0;
+
+			for (k = -r; k <= r; k++)
+				if (x + k >= 0 && x + k < w) {
+					sum += a[y * w + x + k];
+					n++;
+				}
+			tmp[y * w + x] = sum / n;
+		}
+	for (y = 0; y < h; y++)
+		for (x = 0; x < w; x++) {
+			int sum = 0, n = 0;
+
+			for (k = -r; k <= r; k++)
+				if (y + k >= 0 && y + k < h) {
+					sum += tmp[(y + k) * w + x];
+					n++;
+				}
+			a[y * w + x] = sum / n;
+		}
+	wfree(tmp);
+}
+
+/* Sombra da imagem, já com a margem do desfoque (pad) em volta. */
+static RImage *icon_make_shadow(RImage *image, int pad, int opacity)
+{
+	int w = image->width + 2 * pad, h = image->height + 2 * pad;
+	RImage *shadow;
+	unsigned char *a;
+	int x, y;
+
+	if (image->format != RRGBAFormat)
+		return NULL;
+	shadow = RCreateImage(w, h, True);
+	if (!shadow)
+		return NULL;
+	a = wmalloc(w * h);
+	for (y = 0; y < (int)image->height; y++)
+		for (x = 0; x < (int)image->width; x++)
+			a[(y + pad) * w + x + pad] = image->data[4 * (y * image->width + x) + 3];
+	icon_blur_alpha(a, w, h, WMAX(1, pad / 2));
+	icon_blur_alpha(a, w, h, WMAX(1, pad / 2));
+	for (x = 0; x < w * h; x++) {
+		shadow->data[4 * x] = shadow->data[4 * x + 1] = shadow->data[4 * x + 2] = 0;
+		shadow->data[4 * x + 3] = a[x] * opacity / 255;
+	}
+	wfree(a);
+	return shadow;
+}
+
 static void icon_update_pixmap(WIcon *icon, RImage *image)
 {
-	RImage *tile;
+	RImage *tile, *fitted = NULL;
 	Pixmap pixmap;
 	int x, y, sx, sy;
 	unsigned w, h;
@@ -282,6 +421,16 @@ static void icon_update_pixmap(WIcon *icon, RImage *image)
 		tile = RCloneImage(scr->icon_tile);
 	}
 
+	if (image && wPreferences.enforce_icon_margin) {
+		int box = (wPreferences.icon_size * 3 + 2) / 4;
+
+		if (icon->show_title)
+			box = WMIN(box, wPreferences.icon_size - WMFontHeight(scr->icon_title_font) - 2);
+		fitted = icon_fit_content(image, box);
+		if (fitted)
+			image = fitted;
+	}
+
 	if (image) {
 		w = (image->width > wPreferences.icon_size)
 		    ? wPreferences.icon_size : image->width;
@@ -296,8 +445,21 @@ static void icon_update_pixmap(WIcon *icon, RImage *image)
 		y = theight + (wPreferences.icon_size - theight - h) / 2;
 		sy = (image->height - h) / 2;
 
+		if (wPreferences.enforce_icon_margin && icon->tile_type != TILE_CLIP) {
+			int pad = WMAX(2, wPreferences.icon_size / 24);
+			int off = WMAX(1, wPreferences.icon_size / 32);
+			RImage *shadow = icon_make_shadow(image, pad, 110);
+
+			if (shadow) {
+				RCombineArea(tile, shadow, sx, sy, w + 2 * pad, h + 2 * pad,
+					     x - pad + off, y - pad + off);
+				RReleaseImage(shadow);
+			}
+		}
 		RCombineArea(tile, image, sx, sy, w, h, x, y);
 	}
+	if (fitted)
+		RReleaseImage(fitted);
 
 	if (icon->shadowed) {
 		RColor color;
@@ -364,12 +526,16 @@ RImage *wIconValidateIconSize(RImage *icon, int max_size)
 	/* We should hold "ICON_BORDER" (~2) pixels to include the icon border */
 	if (((max_size + ICON_BORDER) < icon->width) ||
 	    ((max_size + ICON_BORDER) < icon->height)) {
+		/* Big WindowMaker: média de área (suave, com alfa) em vez do
+		 * vizinho mais próximo do RScaleImage */
 		if (icon->width > icon->height)
-			nimage = RScaleImage(icon, max_size - ICON_BORDER,
-					     (icon->height * (max_size - ICON_BORDER) / icon->width));
+			nimage = wIconScaleArea(icon, max_size - ICON_BORDER,
+					     WMAX(1, icon->height * (max_size - ICON_BORDER) / icon->width));
 		else
-			nimage = RScaleImage(icon, (icon->width * (max_size - ICON_BORDER) / icon->height),
+			nimage = wIconScaleArea(icon, WMAX(1, icon->width * (max_size - ICON_BORDER) / icon->height),
 					     max_size - ICON_BORDER);
+		if (!nimage)
+			return icon;
 		RReleaseImage(icon);
 		icon = nimage;
 	}

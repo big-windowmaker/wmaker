@@ -508,13 +508,21 @@ static RImage *findBestIcon(unsigned long *data, unsigned long items)
 
 	/* create a scaled down version of the icon */
 	src_image = makeRImageFromARGBData(icon);
+	/* Big WindowMaker: média de área (suave, com alfa) em vez do vizinho
+	 * mais próximo; uma imagem já do tamanho certo fica como está */
+	if ((int)src_image->width == wanted && (int)src_image->height <= wanted)
+		return src_image;
+	if ((int)src_image->height == wanted && (int)src_image->width <= wanted)
+		return src_image;
 	if (src_image->width > src_image->height) {
 		f = (double)wanted / (double)src_image->width;
-		ret_image = RScaleImage(src_image, wanted, (int)(f * (double)(src_image->height)));
+		ret_image = wIconScaleArea(src_image, wanted, WMAX(1, (int)(f * (double)(src_image->height))));
 	} else {
 		f = (double)wanted / (double)src_image->height;
-		ret_image = RScaleImage(src_image, (int)(f * (double)src_image->width), wanted);
+		ret_image = wIconScaleArea(src_image, WMAX(1, (int)(f * (double)src_image->width)), wanted);
 	}
+	if (!ret_image)
+		return src_image;
 	RReleaseImage(src_image);
 	return ret_image;
 }
