@@ -1373,6 +1373,18 @@ static Bool handleWindowType(WWindow *wwin, Atom type, int *layer)
 		wwin->client_flags.skip_switchpanel = 1;
 		wwin->client_flags.dont_move_off = 1;
 		wwin->flags.net_skip_pager = 1;
+		/*
+		 * A dock or panel that never takes the keyboard (WM_HINTS input =
+		 * False, usually with WM_TAKE_FOCUS, as GTK does for
+		 * gtk_window_set_accept_focus(FALSE)) must not get the focus.
+		 * Otherwise closing the last focused window chose the panel as the
+		 * next focused window; wSetFocusTo() only sent WM_TAKE_FOCUS, the
+		 * panel ignored it and the X focus stayed on None, so every key
+		 * binding of the window manager stopped working until a window was
+		 * clicked. Panels that accept input keep their behaviour.
+		 */
+		if (wwin->wm_hints && (wwin->wm_hints->flags & InputHint) && !wwin->wm_hints->input)
+			wwin->client_flags.no_focusable = 1;
 	} else if (type == net_wm_window_type_toolbar ||
 	           type == net_wm_window_type_menu) {
 		wwin->client_flags.no_resizable = 1;
