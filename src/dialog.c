@@ -1593,9 +1593,10 @@ void wShowInfoPanel(WScreen *scr)
 
 	/*
 	 * Big WindowMaker: créditos da edição no fim, depois de um divisor
-	 * entalhado (o mesmo relevo dos grupos do WPrefs), com o título em
-	 * negrito e um nome por linha, centralizados. Montados aqui, depois
-	 * da linha de informações, porque ela pode ter alargado o painel.
+	 * entalhado (o mesmo relevo dos grupos do WPrefs): o título em negrito
+	 * e uma linha "Copyleft (símbolo) Nome" por autor, alinhados à esquerda
+	 * na margem do aviso de copyright acima. Montados aqui, depois da linha
+	 * de informações, porque ela pode ter alargado o painel.
 	 */
 	{
 		int y = WMScaleY(282);
@@ -1611,7 +1612,7 @@ void wShowInfoPanel(WScreen *scr)
 		panel->customTitleL = WMCreateLabel(panel->win);
 		WMResizeWidget(panel->customTitleL, pwidth - 2 * WMScaleX(15), WMScaleY(18));
 		WMMoveWidget(panel->customTitleL, WMScaleX(15), y);
-		WMSetLabelTextAlignment(panel->customTitleL, WACenter);
+		WMSetLabelTextAlignment(panel->customTitleL, WALeft);
 		WMSetLabelWraps(panel->customTitleL, False);
 		WMSetLabelText(panel->customTitleL, BIG_WM_CUSTOM_TITLE);
 		font = WMBoldSystemFontOfSize(scr->wmscreen, WMScaleY(12));
@@ -1624,23 +1625,48 @@ void wShowInfoPanel(WScreen *scr)
 
 		font = WMSystemFontOfSize(scr->wmscreen, WMScaleY(11));
 		for (i = 0; font && i < wlengthof(big_wm_custom_authors); i++) {
+			static const char copyleft[] = "Copyleft";
 			const char *who = big_wm_custom_authors[i];
 			int sym = WMFontHeight(font) - WMScaleY(3);
-			int lw = sym + WMScaleX(5) + WMWidthOfString(font, who, strlen(who)) + 4;
+			int gap = WMAX(4, WMWidthOfString(font, " ", 1));
+			int cw = WMWidthOfString(font, copyleft, strlen(copyleft));
+			int nw = WMWidthOfString(font, who, strlen(who));
+			int ly = y + i * WMScaleY(16);
+			int x = WMScaleX(15);
 			RColor black = { 0, 0, 0, 255 };
 			WMPixmap *pix = makeCopyleftPixmap(scr, sym, &black);
+			WMLabel *word = WMCreateLabel(panel->win);
+			WMLabel *mark = WMCreateLabel(panel->win);
 			WMLabel *label = WMCreateLabel(panel->win);
 
-			WMResizeWidget(label, lw, WMScaleY(16));
-			WMMoveWidget(label, (pwidth - lw) / 2, y + i * WMScaleY(16));
+			/*
+			 * "Copyleft", o símbolo e o nome, com um espaço entre eles. O
+			 * texto de um WMLabel começa 4 pixels para dentro e ocupa a
+			 * largura menos 8 (W_PaintTextAndImage): "Copyleft" fica na
+			 * coluna do aviso de copyright acima.
+			 */
+			WMResizeWidget(word, cw + 8, WMScaleY(16));
+			WMMoveWidget(word, x, ly);
+			WMSetLabelFont(word, font);
+			WMSetLabelTextAlignment(word, WALeft);
+			WMSetLabelWraps(word, False);
+			WMSetLabelText(word, copyleft);
+			x += 4 + cw + gap;
+
+			WMResizeWidget(mark, sym, WMScaleY(16));
+			WMMoveWidget(mark, x, ly);
+			if (pix) {
+				WMSetLabelImage(mark, pix);
+				WMSetLabelImagePosition(mark, WIPImageOnly);
+				WMReleasePixmap(pix);
+			}
+			x += sym + gap - 4;
+
+			WMResizeWidget(label, WMIN(nw + 8, pwidth - WMScaleX(15) - x), WMScaleY(16));
+			WMMoveWidget(label, x, ly);
 			WMSetLabelFont(label, font);
 			WMSetLabelTextAlignment(label, WALeft);
 			WMSetLabelWraps(label, False);
-			if (pix) {
-				WMSetLabelImage(label, pix);
-				WMSetLabelImagePosition(label, WIPLeft);
-				WMReleasePixmap(pix);
-			}
 			WMSetLabelText(label, who);
 			if (i == 0)
 				panel->customNamesL = label;
