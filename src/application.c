@@ -55,6 +55,13 @@ static WWindow *makeMainWindow(WScreen * scr, Window window)
 
 	PropGetWMClass(window, &wwin->wm_class, &wwin->wm_instance);
 
+	/* Same rule as wManageWindow(): the app icon of a dockapp is owned by
+	 * this window, and the Dock asks it whether it is a dockapp. */
+	if ((wwin->wm_class && strcmp(wwin->wm_class, "DockApp") == 0) ||
+	    (wwin->wm_hints && (wwin->wm_hints->flags & StateHint) &&
+	     wwin->wm_hints->initial_state == WithdrawnState))
+		wwin->flags.is_dockapp = 1;
+
 	wDefaultFillAttributes(wwin->wm_instance, wwin->wm_class, &wwin->user_flags,
 			       &wwin->defined_user_flags, True);
 

@@ -2449,6 +2449,14 @@ Bool wDockAttachIcon(WDock *dock, WAppIcon *icon, int x, int y, Bool update_icon
 	icon->launching = 0;
 	icon->docked = 1;
 	icon->dock = dock;
+	/*
+	 * A dockapp left in the Dock or in the Clip by the user is meant to
+	 * stay there: stopped, it is just an empty tile at the next login. It
+	 * starts with Window Maker unless the user turns that off in the icon
+	 * settings. Icons attracted by the Clip are temporary and keep it off.
+	 */
+	if (!icon->attracted && icon->icon->owner && icon->icon->owner->flags.is_dockapp)
+		icon->auto_launch = 1;
 	icon->icon->core->descriptor.handle_mousedown = iconMouseDown;
 	icon->icon->core->descriptor.handle_enternotify = clipEnterNotify;
 	icon->icon->core->descriptor.handle_leavenotify = clipLeaveNotify;
