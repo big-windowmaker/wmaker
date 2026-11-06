@@ -33,6 +33,8 @@
 #include "icon.h"
 #include "client.h"
 #include "motif.h"
+#include "actions.h"
+#include "wmspec.h"
 
 /* Motif window hints */
 #define MWM_HINTS_FUNCTIONS           (1L << 0)
@@ -192,4 +194,65 @@ void wMWMCheckClientHints(WWindow *wwin)
 
 	if (getMWMHints(wwin->client_win, &hints))
 		setupMWMHints(wwin, &hints);
+}
+
+/* Same test as discard_hints_from_gtk() in window.c */
+static Bool isGtkApp(WWindow *wwin)
+{
+	Atom type;
+	int format;
+	unsigned long nb_item, nb_remain;
+	unsigned char *result = NULL;
+
+	if (XGetWindowProperty(dpy, wwin->client_win, w_global.atom.desktop.gtk_object_path, 0, 16, False,
+			       AnyPropertyType, &type, &format, &nb_item, &nb_remain, &result) != Success)
+		return False;
+	if (result)
+		XFree(result);
+	return type != None;
+}
+
+Bool wMWMIsHintsAtom(Atom atom)
+{
+	if (!_XA_MOTIF_WM_HINTS)
+		_XA_MOTIF_WM_HINTS = XInternAtom(dpy, "_MOTIF_WM_HINTS", False);
+	return atom == _XA_MOTIF_WM_HINTS;
+}
+
+/*
+ * The client changed _MOTIF_WM_HINTS after the window was mapped. Qt does
+ * that when an application turns its own title bar on or off (Telegram maps
+ * its main window without decorations and asks for them right after): the
+ * hints were only read when the window was managed, so the window stayed
+ * without title bar. The decorations follow the new hints now, like the
+ * Inspector applies its changes. Only normal windows and dialogs: docks,
+ * desktops and splash screens keep what their type gave them; the user's
+ * attributes (and IgnoreDecorationChanges) still win.
+ */
+void wMWMUpdateClientHints(WWindow *wwin)
+{
+	MWMHints hints;
+	WWindowAttributes old = wwin->client_flags;
+
+	if (!wwin->frame || wwin->user_flags.ignore_decoration_changes || !wNETWMHasDecoratedType(wwin))
+		return;
+	if (wPreferences.ignore_gtk_decoration_hints && isGtkApp(wwin))
+		return;
+
+	wwin->client_flags.no_titlebar = 0;
+	wwin->client_flags.no_close_button = 0;
+	wwin->client_flags.no_miniaturize_button = 0;
+	wwin->client_flags.no_resizebar = 0;
+	wwin->client_flags.no_border = 0;
+	if (getMWMHints(wwin->client_win, &hints))
+		setupMWMHints(wwin, &hints);
+
+	if (memcmp(&old, &wwin->client_flags, sizeof(old)) == 0)
+		return;
+	if (WFLAGP(wwin, no_titlebar) && wwin->flags.shaded)
+		wUnshadeWindow(wwin);
+	wwin->frame->flags.need_texture_change = 1;
+	wWindowConfigureBorders(wwin);
+	wFrameWindowPaint(wwin->frame);
+	wNETWMUpdateActions(wwin, False);
 }

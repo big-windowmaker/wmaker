@@ -41,6 +41,7 @@
 #include "appicon.h"
 #include "appmenu.h"
 #include "wmspec.h"
+#include "motif.h"
 #include "misc.h"
 
 
@@ -564,6 +565,12 @@ void wClientCheckProperty(WWindow * wwin, XPropertyEvent * event)
 			if (wwin->frame)
 				wWindowUpdateButtonImages(wwin);
 
+#ifdef USE_MWM_HINTS
+		} else if (wMWMIsHintsAtom(event->atom)) {
+
+			wMWMUpdateClientHints(wwin);
+
+#endif
 		} else if (event->atom == w_global.atom.wm.colormap_windows) {
 
 			GetColormapWindows(wwin);

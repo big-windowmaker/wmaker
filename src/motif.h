@@ -23,5 +23,7 @@
 #define WMMWM_H_
 
 void wMWMCheckClientHints(WWindow *wwin);
+Bool wMWMIsHintsAtom(Atom atom);
+void wMWMUpdateClientHints(WWindow *wwin);
 
 #endif

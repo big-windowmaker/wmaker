@@ -1500,6 +1500,21 @@ void wNETWMPositionSplash(WWindow *wwin, int *x, int *y, int width, int height)
 	}
 }
 
+/* A window whose decorations come from the application, not from its type:
+ * not a desktop, dock, menu, tooltip, splash... A type wmaker does not know
+ * (Qt puts _KDE_NET_WM_WINDOW_TYPE_OVERRIDE before NORMAL) counts as normal. */
+Bool wNETWMHasDecoratedType(WWindow *wwin)
+{
+	Atom t = wwin->type;
+
+	return !(t == net_wm_window_type_desktop || t == net_wm_window_type_dock ||
+		 t == net_wm_window_type_toolbar || t == net_wm_window_type_menu ||
+		 t == net_wm_window_type_dropdown_menu || t == net_wm_window_type_popup_menu ||
+		 t == net_wm_window_type_combo || t == net_wm_window_type_tooltip ||
+		 t == net_wm_window_type_notification || t == net_wm_window_type_dnd ||
+		 t == net_wm_window_type_splash);
+}
+
 static void updateWindowType(WWindow *wwin)
 {
 	Atom type_ret;
