@@ -777,6 +777,29 @@ Bool wHandleAppIconMove(WAppIcon *aicon, XEvent *event)
 	if (wPreferences.flags.noupdates && originalDock != NULL)
 		return False;
 
+	/* A dockapp whose window takes all the clicks passes a drag on to us as
+	 * a synthetic ButtonPress on the icon (as for the menu, see
+	 * appIconMouseDown and iconMouseDown). There is no implicit grab of ours
+	 * then: without one the motion stops reaching us as soon as the
+	 * pointer leaves the icon, so take the pointer here. */
+	if (event->xbutton.send_event) {
+		Window qroot, qchild;
+		int qrx, qry, qwx, qwy;
+		unsigned int qmask;
+
+		if (XGrabPointer(dpy, icon->core->window, True, ButtonMotionMask
+				 | ButtonReleaseMask | ButtonPressMask, GrabModeAsync,
+				 GrabModeAsync, None, None, CurrentTime) != GrabSuccess)
+			wwarning("pointer grab failed for appicon move");
+		/* The button is already up: no drag to follow (its release will
+		 * never come). */
+		if (XQueryPointer(dpy, scr->root_win, &qroot, &qchild, &qrx, &qry, &qwx, &qwy, &qmask) &&
+		    !(qmask & (Button1Mask << (event->xbutton.button - Button1)))) {
+			XUngrabPointer(dpy, CurrentTime);
+			return False;
+		}
+	}
+
 	if (!(event->xbutton.state & MOD_MASK))
 		wRaiseFrame(icon->core);
 	else {

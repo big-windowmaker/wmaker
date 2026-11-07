@@ -1822,6 +1822,23 @@ static void menuMouseDown(WObjDescriptor * desc, XEvent * event)
 
 	close_on_exit = (bev->send_event || menu->flags.brother);
 
+	/* A dockapp that takes its own clicks passes the right click on as a
+	 * synthetic event (the menu of a docked dockapp). When the button is
+	 * already up by then (the click was quicker than the hand-over, or it
+	 * came from an item of the dockapp's own menu), the release of that
+	 * button never comes: the next release of any button ends it instead,
+	 * as a click does on a menu opened by a click. */
+	Bool any_release = False;
+	if (bev->send_event && bev->button >= Button1 && bev->button <= Button5) {
+		Window qroot, qchild;
+		int qrx, qry, qwx, qwy;
+		unsigned int qmask;
+
+		if (XQueryPointer(dpy, scr->root_win, &qroot, &qchild, &qrx, &qry, &qwx, &qwy, &qmask) &&
+		    !(qmask & (Button1Mask << (bev->button - Button1))))
+			any_release = True;
+	}
+
 	smenu = findMenu(scr, &x, &y);
 	if (!smenu) {
 		x = -1;
@@ -2028,7 +2045,7 @@ static void menuMouseDown(WObjDescriptor * desc, XEvent * event)
 			break;
 
 		case ButtonRelease:
-			if (ev.xbutton.button == event->xbutton.button)
+			if (ev.xbutton.button == event->xbutton.button || any_release)
 				done = 1;
 			break;
 
@@ -2096,6 +2113,13 @@ static void menuMouseDown(WObjDescriptor * desc, XEvent * event)
 		wMenuMove(parentMenu(desc->parent), old_frame_x, old_frame_y, True);
 
  byebye:
+	/* A synthetic press (a dockapp handing its click over, or a menu opened
+	 * from a click elsewhere) came with an explicit pointer grab
+	 * (appIconMouseDown, iconMouseDown), which a button release does not
+	 * end: give the pointer back, or the next clicks keep coming here. */
+	if (bev->send_event)
+		XUngrabPointer(dpy, CurrentTime);
+
 	/* Just to be sure in case we skip the 2 above because of a goto byebye */
 	if (menu && menu->timer) {
 		WMDeleteTimerHandler(menu->timer);
